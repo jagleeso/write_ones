@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# ./rl result/file.txt
+set -x
+set -e
+opencl=helloworld.cl
+executable=helloworld
+ndk-build
+adb push libs/armeabi-v7a/$executable /data/local/tmp
+adb push jni/$opencl /data/local/tmp
+adb shell ./data/local/tmp/$executable

@@ -21,8 +21,33 @@ Copyright ©2012 Advanced Micro Devices, Inc. All rights reserved.
 "	out[num] = in[num] + 1;"\
 "}"
 
+/* #define  KERNEL_SRC2 "__kernel void helloworld(int elems, __global char* in, __global char* out) {"\ */
+/* "	int num = get_global_id(0);"\ */
+/* "	out[0] = in[0] + 1;"\ */
+/* "}" */
+
+#define  KERNEL_SRC2 "__kernel void helloworld(int elems, __global char* in, __global char* out) {"\
+"	int num = get_global_id(0);"\
+"	int i;"\
+"	for (i = 0; i < elems; i++) {"\
+"	    out[i] = in[i] + 1;"\
+"	}"\
+"}"
+
+#define CHECK_STATUS(status, msg) \
+if (status != CL_SUCCESS) { \
+    printf("ERROR %s line %d: " msg "\n", __FILE__, __LINE__); \
+    exit(EXIT_FAILURE); \
+} else { \
+    printf("SUCCESS, status=%d\n", status); \
+} \
+
+
+
 #define PP(p)
 //#define PP(p) printf(#p " pointer:%x\n",p)
+
+#define NUM_WORKERS 1
 
 int main(int argc, char* argv[])
 {
@@ -88,7 +113,8 @@ int main(int argc, char* argv[])
 	//const char *filename = "HelloWorld_Kernel.cl";
 	//string sourceStr;
 	//status = convertToString(filename, sourceStr);
-	const char *source = KERNEL_SRC;//sourceStr.c_str();
+	/* const char *source = KERNEL_SRC;//sourceStr.c_str(); */
+	const char *source = KERNEL_SRC2;//sourceStr.c_str();
 	size_t sourceSize[] = {strlen(source)};
 	IAH();
 	cl_program program = clCreateProgramWithSource(context, 1, &source, sourceSize, NULL);
@@ -96,6 +122,8 @@ int main(int argc, char* argv[])
 	/*Step 6: Build program. */
 	IAH();
 	status=clBuildProgram(program, 1,devices,NULL,NULL,NULL);
+	/* printf("HELLO\n"); */
+    CHECK_STATUS(status, "clBuildProgram");
 
 	/*Step 7: Initial input,output for the host and create memory objects for the kernel*/
 	const char* input = "GdkknVnqkc";
@@ -113,13 +141,27 @@ int main(int argc, char* argv[])
 	cl_kernel kernel = clCreateKernel(program,"helloworld", NULL);
 
 	/*Step 9: Sets Kernel arguments.*/
+	/* IAH(); */
+	/* status = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&inputBuffer); */
+	/* IAH(); */
+	/* status = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&outputBuffer); */
+
+
+
+    /* ciErr1 |= clSetKernelArg(ckKernel, 3, sizeof(cl_int), (void*)&iNumElements); */
+	/* printf("HELLO\n",input); */
+	/*Step 9: Sets Kernel arguments.*/
 	IAH();
-	status = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&inputBuffer);
+    int strsize = strlength;
+	status = clSetKernelArg(kernel, 0, sizeof(cl_int), (void *)&strsize);
 	IAH();
-	status = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&outputBuffer);
+	status = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&inputBuffer);
+	IAH();
+	status = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *)&outputBuffer);
 	
 	/*Step 10: Running the kernel.*/
-	size_t global_work_size[1] = {strlength};
+	/* size_t global_work_size[1] = {strlength}; */
+	size_t global_work_size[1] = {NUM_WORKERS};
 	IAH();
 	status = clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL, global_work_size, NULL, 0, NULL, NULL);
 
@@ -129,6 +171,10 @@ int main(int argc, char* argv[])
 	
 	output[strlength] = '\0';//Add the terminal character to the end of output.
 	printf("output string: %s\n",output);
+
+    /* Print the maximum allocatable memory size for the device.
+     */
+	printf("The max allocateable memory size is %i\n", CL_DEVICE_MAX_MEM_ALLOC_SIZE);
 
 	/*Step 12: Clean the resources.*/
 	IAH();
