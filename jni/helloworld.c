@@ -13,12 +13,25 @@ Copyright ©2012 Advanced Micro Devices, Inc. All rights reserved.
 //#include <string>
 //#include <fstream>
 #include "aopencl.h"
+#include "clutils.h"
+
+#undef NDEBUG
+#include <assert.h>
+
+#include <inttypes.h>
 
 //using namespace std;
 //
 //
 
+#define MAX_CHARS "1000"
+
 #define ARRAY_SIZE (1024)
+/* A sufficiently large ARRAY_SIZE will cause the device to crash and reboot (it will get past 
+ * allocating and writig the input and allocating output memory, but crashes is mid-kernel 
+ * execution).
+ */
+// #define ARRAY_SIZE (5000 * 1024)
 
 #define  KERNEL_SRC "__kernel void helloworld(__global char* in, __global char* out) {"\
 "	int num = get_global_id(0);"\
@@ -30,7 +43,7 @@ Copyright ©2012 Advanced Micro Devices, Inc. All rights reserved.
 /* "	out[0] = in[0] + 1;"\ */
 /* "}" */
 
-#define  KERNEL_SRC2 "__kernel void helloworld(int elems, __global char* in, __global char* out) {"\
+#define KERNEL_SRC2 "__kernel void helloworld(int elems, __global char* in, __global char* out) {"\
 "	int num = get_global_id(0);"\
 "	int i;"\
 "	for (i = 0; i < elems; i++) {"\
@@ -38,9 +51,16 @@ Copyright ©2012 Advanced Micro Devices, Inc. All rights reserved.
 "	}"\
 "}"
 
+/* NOTE:
+ * Executing an infinite loop in the kernel causes the device to crash and reboot; not clear why 
+ * this is the case...
+"   for (; ; ) {"\
+"   }"\
+ */ 
+
 #define CHECK_STATUS(status, msg) \
 if (status != CL_SUCCESS) { \
-    printf("ERROR %s line %d: " msg "\n", __FILE__, __LINE__); \
+    printf("ERROR %s line %d: " msg ": %s\n", __FILE__, __LINE__, clErrorString(status)); \
     exit(EXIT_FAILURE); \
 } else { \
     printf("SUCCESS: " msg ", status=%d\n", status); \
@@ -54,8 +74,26 @@ if (status != CL_SUCCESS) { \
 
 #define NUM_WORKERS 1
 
+
+inline double ms(cl_ulong t) {
+    return t * 1e-06;
+}
+
+
+void profile_times(cl_int* status, cl_event event, cl_ulong* start, cl_ulong* end, cl_ulong* duration);
 int main(int argc, char* argv[])
 {
+
+
+    /* glFinish(); */
+    /* status = clEnqueueAcquireGLObjects(commandQueue, 1, &cl_tex_mem, */
+    /*         0,NULL,NULL ); */
+    /* status = clEnqueueNDRangeKernel(commandQueue, tex_kernel, 2, NULL, */
+    /*         tex_globalWorkSize, */
+    /*         tex_localWorkSize, */
+    /*         0, NULL, NULL); */
+    /* clFinish(commandQueue); */
+    /* status = clEnqueueReleaseGLObjects(commandQueue, 1, &cl_tex_mem, 0, NULL, NULL ); */
 
 	/*Step1: Getting platforms and choose an available one.*/
 	initFns();
@@ -117,7 +155,7 @@ int main(int argc, char* argv[])
 	
 	/*Step 4: Creating command queue associate with the context.*/
 	IAH();
-	cl_command_queue commandQueue = clCreateCommandQueue(context, devices[0], 0, &status);
+	cl_command_queue commandQueue = clCreateCommandQueue(context, devices[0], CL_QUEUE_PROFILING_ENABLE, &status);
     CHECK_STATUS(status, "clCreateCommandQueue");
 
 	/*Step 5: Create program object */
@@ -147,15 +185,31 @@ int main(int argc, char* argv[])
         input[i] = '1';
     }
     input[strlength - 1] = '\0';
-	printf("input string: %s\n",input);
+	printf("input string: %." MAX_CHARS "s\n",input);
 	char *output = (char*) malloc(strlength + 1);
 
 	IAH();
-	cl_mem inputBuffer = clCreateBuffer(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, (strlength + 1) * sizeof(char),(void *) input, &status);
+    cl_event cpu_to_gpu_event;
+    /* NOTE:
+     * CL_MEM_COPY_HOST_PTR => copy immediately
+     * CL_MEM_USE_HOST_PTR => "OpenCL implementations are allowed to cache the buffer contents 
+     * pointed to by host_ptr in device memory. This cached copy can be used when kernels are 
+     * executed on a device."
+     *
+     * May be worth investigating performance differences of these approaches.
+     */
+	/* cl_mem inputBuffer = clCreateBuffer(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, (strlength + 1) * sizeof(char),(void *) input, &status); */
+	cl_mem inputBuffer = clCreateBuffer(context, CL_MEM_READ_ONLY, (strlength + 1) * sizeof(char), NULL, &status);
     CHECK_STATUS(status, "clCreateBuffer");
 	IAH();
 	cl_mem outputBuffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY , (strlength + 1) * sizeof(char), NULL, &status);
     CHECK_STATUS(status, "clCreateBuffer");
+    status = clEnqueueWriteBuffer(commandQueue, inputBuffer, 
+            CL_TRUE, // blocking write
+            0, (strlength + 1) * sizeof(char), input, 0, NULL, &cpu_to_gpu_event);
+    CHECK_STATUS(status, "clEnqueueWriteBuffer");
+    cl_ulong cpu_to_gpu_event_start, cpu_to_gpu_event_end, cpu_to_gpu_event_duration;
+    profile_times(&status, cpu_to_gpu_event, &cpu_to_gpu_event_start, &cpu_to_gpu_event_end, &cpu_to_gpu_event_duration);
 
 	/*Step 8: Create kernel object */
 	IAH();
@@ -183,21 +237,37 @@ int main(int argc, char* argv[])
 	IAH();
 	status = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *)&outputBuffer);
     CHECK_STATUS(status, "clSetKernelArg");
+
+    cl_event kernel_event;
 	
 	/*Step 10: Running the kernel.*/
 	/* size_t global_work_size[1] = {strlength}; */
 	size_t global_work_size[1] = {NUM_WORKERS};
 	IAH();
-	status = clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL, global_work_size, NULL, 0, NULL, NULL);
+	status = clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL, global_work_size, NULL, 0, NULL, &kernel_event);
     CHECK_STATUS(status, "clEnqueueNDRangeKernel");
+    
+    // Wait for the commands to complete before reading back results
+    clFinish(commandQueue);
 
-	/*Step 11: Read the cout put back to host memory.*/
+    /* Collect profiling data:
+     * start end end times of kernel execution.
+     */
+    cl_ulong kernel_event_start, kernel_event_end, kernel_event_duration;
+    profile_times(&status, kernel_event, &kernel_event_start, &kernel_event_end, &kernel_event_duration);
+
+	/* Step 11: 
+     * Read back from the GPU to main memory.
+     */
 	IAH();
-	status = clEnqueueReadBuffer(commandQueue, outputBuffer, CL_TRUE, 0, strlength * sizeof(char), output, 0, NULL, NULL);
+    cl_event gpu_to_cpu_event;
+	status = clEnqueueReadBuffer(commandQueue, outputBuffer, CL_TRUE, 0, strlength * sizeof(char), output, 0, NULL, &gpu_to_cpu_event);
     CHECK_STATUS(status, "clEnqueueReadBuffer");
+    cl_ulong gpu_to_cpu_event_start, gpu_to_cpu_event_end, gpu_to_cpu_event_duration;
+    profile_times(&status, gpu_to_cpu_event, &gpu_to_cpu_event_start, &gpu_to_cpu_event_end, &gpu_to_cpu_event_duration);
 	
 	output[strlength] = '\0';//Add the terminal character to the end of output.
-	printf("output string: %s\n",output);
+	printf("output string: %." MAX_CHARS "s\n",output);
 
     for (i = 0; i < strlength - 1; i++) {
         if (output[i] != '2') {
@@ -228,7 +298,9 @@ int main(int argc, char* argv[])
     CHECK_STATUS(status, "clGetDeviceInfo");
 	printf("The max allocateable memory size is %i\n", device_max_mem_alloc_size);
 	printf("The size of global device memory is %i\n", device_global_mem_size);
-
+    print_profile_times("kernel execution", kernel_event_start, kernel_event_end, kernel_event_duration);
+    print_profile_times("CPU-to-GPU input array copy", cpu_to_gpu_event_start, cpu_to_gpu_event_end, cpu_to_gpu_event_duration);
+    print_profile_times("GPU-to-CPU output array copy", gpu_to_cpu_event_start, gpu_to_cpu_event_end, gpu_to_cpu_event_duration);
 
 
 	/*Step 12: Clean the resources.*/
@@ -270,3 +342,38 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
+void profile_times(cl_int* status, cl_event event, cl_ulong* start, cl_ulong* end, cl_ulong* duration) {
+    /* Collect profiling data:
+     * start end end times of kernel execution.
+     */
+    *start=(cl_ulong)0;
+    *end=(cl_ulong)0;
+    /* A 64-bit value that describes the current device time counter in nanoseconds when the command 
+     * identified by event starts execution on the device. 
+     */
+    *status = clGetEventProfilingInfo(event,
+                                  CL_PROFILING_COMMAND_START,
+                                  sizeof(cl_ulong),
+                                  start,
+                                  NULL);
+    CHECK_STATUS(*status, "clGetEventProfilingInfo");
+    /* A 64-bit value that describes the current device time counter in nanoseconds when the command 
+     * identified by event has finished execution on the device. 
+     */
+    *status = clGetEventProfilingInfo(event,
+                                  CL_PROFILING_COMMAND_END,
+                                  sizeof(cl_ulong),
+                                  end,
+                                  NULL);
+    CHECK_STATUS(*status, "clGetEventProfilingInfo");
+    /* cl_ulong g_NDRangePureExecTimeMs = (cl_double)(end - start)*(cl_double)(1e-06);  */
+    /* assert(end >= start); */
+    assert(*end >= *start);
+    *duration = end - start; 
+}
+
+void print_profile_times(const char * activity, cl_ulong start, cl_ulong end, cl_ulong duration) {
+	printf("The time to complete %s was %f ms\n", activity, ms(duration));
+	printf("    CL_PROFILING_COMMAND_START = %" PRIu64 " ns\n", start);
+	printf("    CL_PROFILING_COMMAND_END = %" PRIu64 " ns\n", end);
+}
