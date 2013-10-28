@@ -165,7 +165,7 @@ int benchmark_helloworld(
     input[strlength - 1] = '\0';
 	printf("input string: %." MAX_CHARS "s\n",input);
 	char *output = (char*) malloc(strlength + 1);
-	printf("Reading an array input[%i] (%fK) of '1's ...\n", array_size, (double)array_size / 1024.0);
+	printf("Reading an array input[%" PRIu64 "] (%fK) of '1's ...\n", array_size, (double)array_size / 1024.0);
 
 	IAH();
     cl_event cpu_to_gpu_event;
@@ -240,7 +240,7 @@ int benchmark_helloworld(
      */
 	IAH();
     cl_event gpu_to_cpu_event;
-	printf("Reading an array output[%i] (%fK) of '2's ...\n", array_size, (double)array_size / 1024.0);
+	printf("Reading an array output[%" PRIu64 "] (%fK) of '2's ...\n", array_size, (double)array_size / 1024.0);
 	status = clEnqueueReadBuffer(commandQueue, outputBuffer, CL_TRUE, 0, strlength * sizeof(char), output, 0, NULL, &gpu_to_cpu_event);
     CHECK_STATUS(status, "clEnqueueReadBuffer");
     cl_ulong gpu_to_cpu_event_start, gpu_to_cpu_event_end, gpu_to_cpu_event_duration;

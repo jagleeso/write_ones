@@ -39,7 +39,7 @@ build $executable
 copy_program_over $executable
 
 array_size=$INCREMENT
-seq 1 $SAMPLES | while read i; do 
+for i in $(seq 1 $SAMPLES); do 
     adb shell ./data/local/tmp/$executable $array_size
     array_size=$((array_size + INCREMENT))
     echo
