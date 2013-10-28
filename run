@@ -3,8 +3,9 @@
 set -x
 set -e
 opencl=helloworld.cl
-executable=helloworld
+executable="$1"
+shift
 ndk-build
 adb push libs/armeabi-v7a/$executable /data/local/tmp
 adb push jni/$opencl /data/local/tmp
-adb shell ./data/local/tmp/$executable
+adb shell ./data/local/tmp/$executable "$@"

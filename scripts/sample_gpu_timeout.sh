@@ -7,6 +7,7 @@ SAMPLES=25
 # SLEEP_UNTIL_REBOOT=5
 
 cd "$(dirname "$0")"
+cd ../
 # set -x
 set -e
 opencl=helloworld.cl
