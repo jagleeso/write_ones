@@ -155,7 +155,7 @@ int benchmark_helloworld(
 
 	/*Step 7: Initial input,output for the host and create memory objects for the kernel*/
 	/* const char* input = "GdkknVnqkc"; */
-	char input[array_size - 1];
+	char* input = (char*) malloc(array_size - 1);
 	/* size_t strlength = strlen(input); */
 	size_t strlength = array_size - 1;
     int i;

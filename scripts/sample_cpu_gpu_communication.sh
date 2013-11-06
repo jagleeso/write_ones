@@ -3,7 +3,7 @@
 # back into main memory (GPU-to-CPU).
 
 
-SAMPLES=100
+SAMPLES=10
 
 cd "$(dirname "$0")"
 source ./common.sh
@@ -17,8 +17,10 @@ guess_max_array_size() {
     build empty_kernel
     copy_program_over empty_kernel
     local increment=100000
-    local size=$((1024*7500))
+    # local size=$((1024*7500))
+    local size=$((1536*1024*1024))
     while true; do
+        echo "SIZE == $size"
         if adb shell ./data/local/tmp/empty_kernel $size 2>&1 | grep --quiet "Segmentation fault"; then
             max_array_size=$((size - increment))
             echo "> Max input/output array size (bytes): $max_array_size"
@@ -29,7 +31,9 @@ guess_max_array_size() {
     done
 }
 
-guess_max_array_size
+# guess_max_array_size
+max_array_size=$((512*1024*1024))
+echo "> Max input/output array size (bytes): $max_array_size"
 
 INCREMENT=$((max_array_size / SAMPLES))
 echo "> Sample input/ouput size increment (bytes): $INCREMENT"
